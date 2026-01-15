@@ -547,4 +547,33 @@ async def search_handler(client, message: Message):
 
 if __name__ == "__main__":
     print("🚀 Bot ishga tushdi...")
+    app.run()]))
+            
+            ai_response = await ai_analyze_and_answer(
+                query, 
+                f"Foydalanuvchi '{query}' haqida so'radi. Umumiy bilimlaringiz asosida javob bering.",
+                lang
+            )
+            
+            if ai_response:
+                await message.reply_text(f"🤖 **AI Javob:**\n\n{ai_response}")
+            else:
+                error_texts = {
+                    "uz": "❌ Xatolik yuz berdi. Qaytadan urinib ko'ring.",
+                    "ru": "❌ Произошла ошибка. Попробуйте снова.",
+                    "en": "❌ An error occurred. Please try again."
+                }
+                await processing.edit_text(error_texts.get(lang, error_texts["uz"]))
+    
+    except Exception as e:
+        logger.error(f"Error: {e}")
+        error_texts = {
+            "uz": "❌ Xatolik yuz berdi. Qaytadan urinib ko'ring.",
+            "ru": "❌ Произошла ошибка. Попробуйте снова.",
+            "en": "❌ An error occurred. Please try again."
+        }
+        await processing.edit_text(error_texts.get(lang, error_texts["uz"]))
+
+if __name__ == "__main__":
+    print("🚀 Bot ishga tushdi...")
     app.run()
