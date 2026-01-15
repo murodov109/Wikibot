@@ -1,17 +1,14 @@
-
- import os
+import os
 import json
 import asyncio
 from datetime import datetime
 from pyrogram import Client, filters
-from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
+from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message
 import wikipedia
 import requests
 from bs4 import BeautifulSoup
 import logging
 import re
-from shazamio import Shazam
-import urllib.parse
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -26,12 +23,6 @@ app = Client("wikipedia_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TO
 
 DB_FILE = "database.json"
 
-IMAGE_APIS = [
-    {"name": "Pollinations Enhanced", "url": lambda p: f"https://image.pollinations.ai/prompt/{p}?width=1024&height=1024&nologo=true&enhance=true"},
-    {"name": "Pollinations Alt", "url": lambda p: f"https://pollinations.ai/p/{p}?width=1024&height=1024&nologo=true"},
-    {"name": "Pollinations Standard", "url": lambda p: f"https://image.pollinations.ai/prompt/{p}?width=1024&height=1024"}
-]
-
 def load_db():
     if os.path.exists(DB_FILE):
         with open(DB_FILE, 'r', encoding='utf-8') as f:
@@ -41,8 +32,7 @@ def load_db():
         "channels": [],
         "searches": {},
         "ads": [],
-        "user_language": {},
-        "admin_state": {}
+        "user_language": {}
     }
 
 def save_db(data):
@@ -78,11 +68,13 @@ def language_keyboard():
     ])
 
 def admin_panel_keyboard():
-    return ReplyKeyboardMarkup([
-        [KeyboardButton("📊 Statistika"), KeyboardButton("📢 Kanallar")],
-        [KeyboardButton("📣 Reklama"), KeyboardButton("🔍 Top qidiruvlar")],
-        [KeyboardButton("❌ Panelni yopish")]
-    ], resize_keyboard=True)
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("📊 Statistika", callback_data="admin_stats")],
+        [InlineKeyboardButton("📢 Kanallar", callback_data="admin_channels")],
+        [InlineKeyboardButton("📣 Reklama yuborish", callback_data="admin_broadcast")],
+        [InlineKeyboardButton("🔍 Eng ko'p qidirilganlar", callback_data="admin_top_searches")],
+        [InlineKeyboardButton("❌ Yopish", callback_data="admin_close")]
+    ])
 
 def add_user(user_id, username, first_name):
     if str(user_id) not in db["users"]:
@@ -109,15 +101,6 @@ def set_user_language(user_id, lang):
     if "user_language" not in db:
         db["user_language"] = {}
     db["user_language"][str(user_id)] = lang
-    save_db(db)
-
-def get_admin_state(user_id):
-    return db.get("admin_state", {}).get(str(user_id), None)
-
-def set_admin_state(user_id, state):
-    if "admin_state" not in db:
-        db["admin_state"] = {}
-    db["admin_state"][str(user_id)] = state
     save_db(db)
 
 async def ai_analyze_and_answer(query, collected_info, language="uz"):
@@ -172,62 +155,6 @@ Ushbu savol va ma'lumotlar asosida to'liq, aniq va foydali javob tayyorlang."""
             return None
     except Exception as e:
         logger.error(f"AI Error: {e}")
-        return None
-
-async def generate_image(prompt, message):
-    try:
-        encoded_prompt = urllib.parse.quote(prompt)
-        
-        for api in IMAGE_APIS:
-            try:
-                image_url = api["url"](encoded_prompt)
-                await message.reply_photo(
-                    image_url,
-                    caption=f"🎨 **Rasm yaratildi!**\n\n📝 Prompt: {prompt}\n🔧 API: {api['name']}"
-                )
-                return True
-            except Exception as e:
-                logger.error(f"{api['name']} error: {e}")
-                continue
-        
-        return False
-    except Exception as e:
-        logger.error(f"Image generation error: {e}")
-        return False
-
-async def recognize_music(file_path):
-    try:
-        shazam = Shazam()
-        result = await shazam.recognize_song(file_path)
-        
-        if result and 'track' in result:
-            track = result['track']
-            title = track.get('title', 'Noma\'lum')
-            artist = track.get('subtitle', 'Noma\'lum')
-            cover = track.get('images', {}).get('coverart', '')
-            
-            sections = track.get('sections', [])
-            youtube_link = None
-            
-            for section in sections:
-                if section.get('type') == 'VIDEO':
-                    items = section.get('youtubeids', {}).get('actions', [])
-                    if items:
-                        youtube_id = items[0].get('id')
-                        if youtube_id:
-                            youtube_link = f"https://www.youtube.com/watch?v={youtube_id}"
-                            break
-            
-            return {
-                "title": title,
-                "artist": artist,
-                "cover": cover,
-                "youtube": youtube_link
-            }
-        
-        return None
-    except Exception as e:
-        logger.error(f"Shazam error: {e}")
         return None
 
 async def search_wikipedia(query, language="uz"):
@@ -360,10 +287,7 @@ async def start_command(client, message: Message):
     add_user(user_id, username, first_name)
     
     if user_id == ADMIN_ID:
-        await message.reply_text(
-            "👨‍💼 **Admin Panel**\n\nQuyidagi tugmalardan foydalaning:",
-            reply_markup=admin_panel_keyboard()
-        )
+        await message.reply_text("👨‍💼 **Admin Panel**\n\nQuyidagi tugmalardan birini tanlang:", reply_markup=admin_panel_keyboard())
         return
     
     if not await check_subscription(user_id):
@@ -373,40 +297,12 @@ async def start_command(client, message: Message):
     lang = get_user_language(user_id)
     
     messages = {
-        "uz": f"👋 Salom {first_name}!\n\n🤖 Men AI bilan ishlaydigan ko'p funksiyali botman!\n\n📚 **Qidiruv:**\nIstalgan savolni yuboring\n\n🎨 **Rasm yaratish:**\n/image [tavsif]\nMisol: /image kosmosdagi mushuk\n\n🎵 **Musiqa tanish:**\nAudio yuborib \"musiqa\" deb yozing\n\n🌍 Tilni tanlash: /language",
-        "ru": f"👋 Привет {first_name}!\n\n🤖 Я многофункциональный AI бот!\n\n📚 **Поиск:**\nОтправьте любой вопрос\n\n🎨 **Создание изображений:**\n/image [описание]\nПример: /image кот в космосе\n\n🎵 **Распознавание музыки:**\nОтправьте аудио и напишите \"музыка\"\n\n🌍 Язык: /language",
-        "en": f"👋 Hello {first_name}!\n\n🤖 I'm a multi-functional AI bot!\n\n📚 **Search:**\nSend any question\n\n🎨 **Image generation:**\n/image [description]\nExample: /image cat in space\n\n🎵 **Music recognition:**\nSend audio and write \"music\"\n\n🌍 Language: /language"
+        "uz": f"👋 Salom {first_name}!\n\n🤖 Men AI bilan ishlaydigan aqlli qidiruv botiman.\n\n📝 Menga istalgan savolingizni yozing:\n• Wikipedia\n• Google\n• Bing\n• DuckDuckGo\n\nva boshqa manbalardan qidirib, AI yordamida to'liq tahlil qilib javob beraman!\n\n🌍 Tilni tanlang: /language\n\n💡 Misol: 'Sun'iy intellekt nima?'",
+        "ru": f"👋 Привет {first_name}!\n\n🤖 Я умный бот поиска с AI.\n\n📝 Задайте мне любой вопрос, я найду информацию из:\n• Wikipedia\n• Google\n• Bing\n• DuckDuckGo\n\nи отвечу с помощью AI!\n\n🌍 Выбрать язык: /language\n\n💡 Пример: 'Что такое искусственный интеллект?'",
+        "en": f"👋 Hello {first_name}!\n\n🤖 I'm an AI-powered smart search bot.\n\n📝 Ask me anything, I'll search:\n• Wikipedia\n• Google\n• Bing\n• DuckDuckGo\n\nand answer using AI!\n\n🌍 Change language: /language\n\n💡 Example: 'What is artificial intelligence?'"
     }
     
     await message.reply_text(messages.get(lang, messages["uz"]))
-
-@app.on_message(filters.command("image"))
-async def image_command(client, message: Message):
-    user_id = message.from_user.id
-    
-    if not await check_subscription(user_id):
-        await message.reply_text("❗️ Botdan foydalanish uchun quyidagi kanallarga obuna bo'ling:", reply_markup=subscription_keyboard())
-        return
-    
-    if len(message.command) < 2:
-        lang = get_user_language(user_id)
-        texts = {
-            "uz": "❌ Format: /image [tavsif]\n\nMisol:\n/image go'zal tog'lar\n/image kosmosdagi mushuk",
-            "ru": "❌ Формат: /image [описание]\n\nПример:\n/image красивые горы\n/image кот в космосе",
-            "en": "❌ Format: /image [description]\n\nExample:\n/image beautiful mountains\n/image cat in space"
-        }
-        await message.reply_text(texts.get(lang, texts["uz"]))
-        return
-    
-    prompt = message.text.split(None, 1)[1]
-    processing = await message.reply_text("🎨 Rasm yaratyapman...")
-    
-    success = await generate_image(prompt, message)
-    
-    if success:
-        await processing.delete()
-    else:
-        await processing.edit_text("❌ Rasm yaratishda xatolik. Qaytadan urinib ko'ring.")
 
 @app.on_message(filters.command("language"))
 async def language_command(client, message: Message):
@@ -419,60 +315,6 @@ async def language_command(client, message: Message):
     }
     
     await message.reply_text(texts.get(lang, texts["uz"]), reply_markup=language_keyboard())
-
-@app.on_message(filters.audio | filters.voice)
-async def audio_handler(client, message: Message):
-    user_id = message.from_user.id
-    
-    if not await check_subscription(user_id):
-        await message.reply_text("❗️ Botdan foydalanish uchun quyidagi kanallarga obuna bo'ling:", reply_markup=subscription_keyboard())
-        return
-    
-    lang = get_user_language(user_id)
-    
-    processing_texts = {
-        "uz": "🎵 Musiqa tanilmoqda...",
-        "ru": "🎵 Распознаю музыку...",
-        "en": "🎵 Recognizing music..."
-    }
-    
-    processing = await message.reply_text(processing_texts.get(lang, processing_texts["uz"]))
-    
-    try:
-        file = await client.download_media(message)
-        
-        result = await recognize_music(file)
-        
-        if result:
-            response = f"🎵 **Musiqa topildi!**\n\n"
-            response += f"🎤 Qo'shiq: {result['title']}\n"
-            response += f"👤 Ijrochi: {result['artist']}\n"
-            
-            if result['youtube']:
-                response += f"🔗 YouTube: {result['youtube']}"
-            
-            if result['cover']:
-                try:
-                    await message.reply_photo(result['cover'], caption=response)
-                    await processing.delete()
-                except:
-                    await processing.edit_text(response)
-            else:
-                await processing.edit_text(response)
-        else:
-            error_texts = {
-                "uz": "❌ Musiqa tanilmadi. Boshqa audio yuboring.",
-                "ru": "❌ Музыка не распознана. Отправьте другое аудио.",
-                "en": "❌ Music not recognized. Send another audio."
-            }
-            await processing.edit_text(error_texts.get(lang, error_texts["uz"]))
-        
-        if os.path.exists(file):
-            os.remove(file)
-    
-    except Exception as e:
-        logger.error(f"Audio error: {e}")
-        await processing.edit_text("❌ Xatolik yuz berdi.")
 
 @app.on_callback_query()
 async def callback_handler(client, callback_query):
@@ -514,25 +356,17 @@ async def callback_handler(client, callback_query):
             }
             await callback_query.answer(texts.get(lang, texts["uz"]), show_alert=True)
         return
-
-@app.on_message(filters.text & filters.user(ADMIN_ID) & ~filters.command("start"))
-async def admin_message_handler(client, message: Message):
-    text = message.text
-    state = get_admin_state(ADMIN_ID)
     
-    if text == "❌ Panelni yopish":
-        set_admin_state(ADMIN_ID, None)
-        await message.reply_text("✅ Admin panel yopildi", reply_markup=ReplyKeyboardRemove())
+    if user_id != ADMIN_ID:
+        await callback_query.answer("⛔️ Sizda ruxsat yo'q!", show_alert=True)
         return
     
-    if text == "📊 Statistika":
+    if data == "admin_stats":
         total_users = len(db["users"])
         total_searches = sum(db["searches"].values())
-        stats_text = f"📊 **Statistika**\n\n👥 Foydalanuvchilar: {total_users}\n🔍 Qidiruvlar: {total_searches}"
-        await message.reply_text(stats_text)
-        return
-    
-    if text == "📢 Kanallar":
+        text = f"📊 **Statistika**\n\n👥 Foydalanuvchilar: {total_users}\n🔍 Qidiruvlar: {total_searches}"
+        await callback_query.message.edit_text(text, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Orqaga", callback_data="admin_back")]]))
+    elif data == "admin_channels":
         channels_text = "📢 **Majburiy kanallar:**\n\n"
         if db["channels"]:
             for i, ch in enumerate(db["channels"], 1):
@@ -540,38 +374,19 @@ async def admin_message_handler(client, message: Message):
         else:
             channels_text += "Hozircha kanallar yo'q.\n"
         channels_text += "\n💡 Kanal qo'shish: /addchannel @kanal\n💡 Kanalni o'chirish: /removechannel @kanal"
-        await message.reply_text(channels_text)
-        return
-    
-    if text == "📣 Reklama":
-        set_admin_state(ADMIN_ID, "broadcast")
-        await message.reply_text("📣 Yubormoqchi bo'lgan xabaringizni yuboring:")
-        return
-    
-    if text == "🔍 Top qidiruvlar":
+        await callback_query.message.edit_text(channels_text, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Orqaga", callback_data="admin_back")]]))
+    elif data == "admin_broadcast":
+        await callback_query.message.edit_text("📣 **Reklama yuborish**\n\nYubormoqchi bo'lgan xabaringizni yuboring.\nFormat: /broadcast [xabar]", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Orqaga", callback_data="admin_back")]]))
+    elif data == "admin_top_searches":
         top = sorted(db["searches"].items(), key=lambda x: x[1], reverse=True)[:10]
-        top_text = "🔍 **Eng ko'p qidirilgan 10 ta so'rov:**\n\n"
+        text = "🔍 **Eng ko'p qidirilgan 10 ta so'rov:**\n\n"
         for i, (query, count) in enumerate(top, 1):
-            top_text += f"{i}. {query} - {count} marta\n"
-        await message.reply_text(top_text)
-        return
-    
-    if state == "broadcast":
-        success = 0
-        failed = 0
-        status_msg = await message.reply_text("📤 Yuborilmoqda...")
-        
-        for user_id in db["users"]:
-            try:
-                await client.send_message(int(user_id), text)
-                success += 1
-            except:
-                failed += 1
-            await asyncio.sleep(0.05)
-        
-        await status_msg.edit_text(f"✅ Yuborildi: {success}\n❌ Xato: {failed}")
-        set_admin_state(ADMIN_ID, None)
-        return
+            text += f"{i}. {query} - {count} marta\n"
+        await callback_query.message.edit_text(text, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Orqaga", callback_data="admin_back")]]))
+    elif data == "admin_back":
+        await callback_query.message.edit_text("👨‍💼 **Admin Panel**\n\nQuyidagi tugmalardan birini tanlang:", reply_markup=admin_panel_keyboard())
+    elif data == "admin_close":
+        await callback_query.message.delete()
 
 @app.on_message(filters.command("addchannel") & filters.user(ADMIN_ID))
 async def add_channel(client, message: Message):
@@ -599,10 +414,27 @@ async def remove_channel(client, message: Message):
     else:
         await message.reply_text("❌ Bu kanal ro'yxatda yo'q!")
 
-@app.on_message(filters.text & filters.private & ~filters.user(ADMIN_ID))
+@app.on_message(filters.command("broadcast") & filters.user(ADMIN_ID))
+async def broadcast(client, message: Message):
+    if len(message.command) < 2:
+        await message.reply_text("❌ Format: /broadcast [xabar]")
+        return
+    text = message.text.split(None, 1)[1]
+    success = 0
+    failed = 0
+    status_msg = await message.reply_text("📤 Yuborilmoqda...")
+    for user_id in db["users"]:
+        try:
+            await client.send_message(int(user_id), text)
+            success += 1
+        except:
+            failed += 1
+        await asyncio.sleep(0.05)
+    await status_msg.edit_text(f"✅ Yuborildi: {success}\n❌ Xato: {failed}")
+
+@app.on_message(filters.text & filters.private)
 async def search_handler(client, message: Message):
     user_id = message.from_user.id
-    
     if message.text.startswith('/'):
         return
     
@@ -680,7 +512,7 @@ async def search_handler(client, message: Message):
                 
                 await processing.edit_text(simple_response, disable_web_page_preview=False)
         else:
-                       fallback_texts = {
+            fallback_texts = {
                 "uz": "🔍 Keling, boshqa usulda qidiramiz...",
                 "ru": "🔍 Давайте попробуем другой способ...",
                 "en": "🔍 Let me try another way..."
