@@ -1,4 +1,5 @@
-import os
+
+ import os
 import json
 import asyncio
 from datetime import datetime
@@ -679,7 +680,7 @@ async def search_handler(client, message: Message):
                 
                 await processing.edit_text(simple_response, disable_web_page_preview=False)
         else:
-            fallback_texts = {
+                       fallback_texts = {
                 "uz": "🔍 Keling, boshqa usulda qidiramiz...",
                 "ru": "🔍 Давайте попробуем другой способ...",
                 "en": "🔍 Let me try another way..."
